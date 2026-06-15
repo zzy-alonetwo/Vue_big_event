@@ -2,10 +2,10 @@ import { useUserStore } from '@/stores'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import router from '@/router'
-const base_url = 'https://big-event-vue-api-t.itheima.net/'
+const baseURL = 'https://big-event-vue-api-t.itheima.net'
 
 const instance = axios.create({
-  baseURL: base_url,
+  baseURL,
   timeout: 10000,
 })
 instance.interceptors.request.use(
@@ -13,30 +13,39 @@ instance.interceptors.request.use(
     // TODO 2. 携带token
     // return config
     const userStore = useUserStore()
-    if (userStore.token) config.headers.Authorization = userStore.token
+    if (userStore.token) {
+      config.headers.Authorization = userStore.token
+    }
     return config
   },
   (err) => {
-    Promise.reject(err)
+    return Promise.reject(err)
   },
 )
 
-instance.response.use(
-  (res) => {
-    // TODO 4. 摘取核心响应数据
-    if (res.response.code === 0) return res
-
-    ElMessage.error(res.data.message || '服务异常')
-    return Promise.reject(res.data)
+instance.interceptors.response.use(
+  (response) => {
+    // 假设后端成功码为 0
+    console.log('响应拦截器:', response.data) // 调试用
+    const biz = response.data
+    const ok = biz?.code === 0 || biz?.status === 0
+    if (ok) {
+      return biz // 确保总是返回业务对象
+    }
+    // 处理业务错误，返回一个带错误信息的对象而不是 reject
+    return Promise.reject({
+      code: biz?.code ?? biz?.status ?? -1,
+      message: biz?.message || '请求失败',
+      response: response,
+    })
   },
-  (err) => {
-    // TODO 3. 处理业务失败
-    // 错误的特殊情况 => 401 权限不足 或 token 过期 => 拦截到登录
-    if (err.response?.status === 401) return router.push('/login')
-
-    // 错误的默认情况 => 只要给提示
-    ElMessage.error(err.response.data.message || '服务异常')
-    return Promise.reject(err)
+  (error) => {
+    // 处理网络错误
+    return Promise.reject({
+      code: error.response?.status || 500,
+      message: error.response?.data?.message || error.message || '网络错误',
+      response: error.response,
+    })
   },
 )
 
